@@ -40,11 +40,6 @@ export const api = {
     status: () => invoke<{ installed: boolean }>('cert_status'),
     install: () => invoke<{ installed: boolean }>('cert_install'),
   },
-  license: {
-    status: () => invoke<{ status: string; message: string }>('license_status'),
-    activate: (code: string) =>
-      invoke<{ status: string; message: string }>('license_activate', { code }),
-  },
   proxy: {
     start: (port: number) => invoke<ProxyStatus>('proxy_start', { port }),
     stop: () => invoke<ProxyStatus>('proxy_stop'),
