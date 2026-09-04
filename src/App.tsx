@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
@@ -15,8 +15,7 @@ import WorkBuddyDashboard from './pages/WorkBuddyDashboard';
 import WorkBuddyAccounts from './pages/WorkBuddyAccounts';
 import WorkBuddyCheckin from './pages/WorkBuddyCheckin';
 import WorkBuddyCredits from './pages/WorkBuddyCredits';
-import ActivationGate from './components/ActivationGate';
-import { api, isTauri } from './lib/tauri';
+import { isTauri } from './lib/tauri';
 import type { ViewKey } from './types';
 
 function renderView(view: ViewKey) {
@@ -83,23 +82,13 @@ export default function App() {
   const init = useAppStore((s) => s.init);
   const ready = useAppStore((s) => s.ready);
   const settings = useAppStore((s) => s.settings);
-  const [license, setLicense] = useState<'checking' | 'ok' | 'blocked'>('checking');
 
-  // 授权门：release 构建由后端校验本地授权（开发构建后端直接放行）
   useEffect(() => {
     if (!isTauri) return;
-    api
-      .license.status()
-      .then((r) => setLicense(r.status === 'ok' ? 'ok' : 'blocked'))
-      .catch(() => setLicense('blocked'));
-  }, []);
-
-  useEffect(() => {
-    if (license !== 'ok') return;
     void init().catch((err) => {
       console.error('初始化失败:', err);
     });
-  }, [license, init]);
+  }, [init]);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -119,11 +108,7 @@ export default function App() {
     return <BrowserFallback />;
   }
 
-  if (license === 'blocked') {
-    return <ActivationGate onSuccess={() => setLicense('ok')} />;
-  }
-
-  if (license === 'checking' || !ready) {
+  if (!ready) {
     return (
       <div className="flex h-full items-center justify-center bg-slate-100 dark:bg-zinc-950">
         <div className="flex flex-col items-center gap-3">

@@ -4,7 +4,6 @@
 mod commands;
 mod fs_utils;
 mod jwt;
-mod license_guard;
 mod models;
 mod python;
 mod state;
@@ -36,8 +35,6 @@ fn main() {
         .manage(Mutex::new(Option::<commands::oauth::OAuthCallbackHandle>::None))
         .manage(Mutex::new(Option::<commands::browser_extract::BrowserExtractHandle>::None))
         .invoke_handler(tauri::generate_handler![
-            commands::license::license_status,
-            commands::license::license_activate,
             commands::env::env_check,
             commands::env::open_trae_website,
             commands::env::open_trae_app,

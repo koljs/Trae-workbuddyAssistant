@@ -4,6 +4,24 @@
 
 ---
 
+## [2.5.0] - 2026-09-04
+
+移除软件激活（授权口令）机制，应用启动后直接进入主界面，无需激活。
+
+### 移除
+
+- **激活门（前端）**：`src/components/ActivationGate.tsx`（口令输入页）与公众号二维码 `src/assets/wechat-qr.jpg`；`App.tsx` 启动时不再调用 `license_status` 检查授权，`src/lib/tauri.ts` 移除 `api.license` 封装。
+- **授权防护（后端）**：`src-tauri/src/commands/license.rs`（`license_status` / `license_activate` 命令）与 `src-tauri/src/license_guard/` 模块（验证服务器通信、RSA 验签、机器指纹采集、本地凭证校验）。
+- **依赖清理**：`Cargo.toml` 移除仅被授权模块使用的 `rsa`、`winreg`（`base64` / `sha2` / `ureq` 被其他模块使用，保留）。
+
+### 说明
+
+- 授权系统此前未写入任何文档（`docs/` 与 `README.md` 均无激活流程描述），故其余文档无需改动。
+- 老用户本机 `%USERPROFILE%\.license_guard\license.dat` 残留凭证不再被读取，可手动删除。
+- 正式版需重新执行 `npm run tauri build` 打包；开发模式 `npm run tauri dev` 直接生效。
+
+---
+
 ## [2.4.4] - 2026-08-16
 
 维护版本：清理临时文档并同步版本号。
