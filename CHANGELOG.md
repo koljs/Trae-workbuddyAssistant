@@ -4,6 +4,20 @@
 
 ---
 
+## [2.5.1] - 2026-09-04
+
+修复便携包在未安装 Python 的机器上无法生成/安装 CA 证书的问题。
+
+### 修复
+
+- **便携包内嵌 Python 运行时**：`scripts/package_portable.py` 打包时自动构建并嵌入 Python 3.12 embeddable 解释器与依赖库（`cryptography`、`pywin32`、`cffi`、`pycparser`，解压至 `resources/python/Lib/site-packages/`），并重写 `python312._pth` 启用 `import site`。`state.rs` 原有逻辑会优先探测 `resources/python/python.exe`，便携包从此开箱即用，CA 证书生成（`device_proxy.py --gen-ca`）等全部 Python 功能不再依赖目标机器安装 Python。
+- 首次打包时运行时缓存于 `release/_py_runtime/`（可复用），剔除 `PyWin32.chm` 帮助文档等无用文件控制体积。打包脚本在 Windows / Linux 主机上均可运行（pip 交叉下载 `win_amd64` wheels）。
+
+### 说明
+
+- 安装版（NSIS/MSI）维持 README 声明的前置要求"Python 3.9+"不变，行为未变。
+- 便携包体积由约 7.4 MB 增至约 28 MB（内嵌运行时所致）。
+
 ## [2.5.0] - 2026-09-04
 
 移除软件激活（授权口令）机制，应用启动后直接进入主界面，无需激活。
