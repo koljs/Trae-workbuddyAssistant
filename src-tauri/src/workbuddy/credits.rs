@@ -289,49 +289,77 @@ fn is_success(response: &Value) -> bool {
     }
 }
 
-/// 认证 POST 链路：资源查询与官方用量查询共用（official_usage 本项目未移植，预留）。
+/// 认证 POST 链路（预留：官方用量查询本项目未移植）。
 ///
 /// 先按现有惰性策略保证 token 新鲜，遇到未授权时使用 refresh token
 /// 重试一次。调用方只拿到上游 JSON，不会把认证字段拼进返回值。
 #[allow(dead_code)]
 pub fn authenticated_post(account: &Value, url: &str, body: Value) -> Value {
     let mut working_account = ensure_fresh_token(account.clone());
-    let mut response = post_with_account(&working_account, url, body.clone());
+    let mut response = post_with_channel(&working_account, url, body.clone(), Channel::WebDesktop);
 
     if is_unauthorized(&response) && get_str(&working_account, "refresh_token").is_some() {
         working_account = refresh_account_token(working_account);
-        response = post_with_account(&working_account, url, body);
+        response = post_with_channel(&working_account, url, body, Channel::WebDesktop);
     }
 
     response
 }
 
-fn post_with_account(account: &Value, url: &str, body: Value) -> Value {
-    let headers = resource_auth_headers(account);
-    http_post_json(url, &body, &headers)
+/// 积分查询认证通道。
+///
+/// 官方用户中心（uc_config）的 Axios 拦截器按平台声明区分认证方式：
+/// - web 平台：Cookie 认证，不携带 Authorization；
+/// - miniprogram 平台：`Authorization: Bearer <token>`（token 经 URL 参数
+///   `?platform=miniProgram&token=` 注入 sessionStorage）。
+///
+/// 桌面端持有 OAuth token，无法模拟 Cookie 通道，因此逐个尝试以下组合，
+/// 哪个成功用哪个（不同账号 / 不同时期的网关策略可能不同）：
+/// 1. miniprogram 通道 + 按 domain 选择的端点（对齐官方小程序）；
+/// 2. miniprogram 通道 + 另一官方端点；
+/// 3. web 声明 + 桌面完整头 + workbuddy.cn（样例 official_usage 用法）；
+/// 4. web 声明 + 桌面完整头 + codebuddy.cn（v2.6.0 行为）。
+#[derive(Clone, Copy, PartialEq)]
+enum Channel {
+    /// `X-Client-Platform: miniprogram` + Bearer（精简头，对齐官方小程序拦截器）。
+    MiniProgram,
+    /// `X-Client-Platform: web` + 桌面完整头（v2.6.0 / 样例行为）。
+    WebDesktop,
 }
 
-/// 新网关 billing 接口（无 /v2 前缀）走用户中心 miniprogram 通道。
-///
-/// 官方用户中心（uc_config）的 Axios 拦截器逻辑：web 平台用 Cookie 认证
-/// （withCredentials，不携带 Authorization）；miniprogram 平台用
-/// `Authorization: Bearer <token>`。两种平台的请求头集合一致，均为
-/// X-Client-Platform + （小程序时的）Authorization + 基础 JSON 头，
-/// 不含 X-User-Id / X-Domain 等桌面端专用头。
-///
-/// 桌面端持有 OAuth token，因此模拟 miniprogram 通道：声明
-/// `X-Client-Platform: miniprogram` 并携带 Bearer token。此前声明 web
-/// 平台却被按 Cookie 通道校验，服务端返回"请求不合法"。
-fn resource_auth_headers(account: &Value) -> std::collections::HashMap<String, String> {
-    let mut headers = std::collections::HashMap::new();
-    headers.insert(
-        "Authorization".to_string(),
-        format!("Bearer {}", get_str(account, "access_token").unwrap_or_default()),
-    );
-    headers.insert("X-Client-Platform".to_string(), "miniprogram".to_string());
-    headers.insert("Accept".to_string(), "application/json".to_string());
-    headers.insert("Content-Type".to_string(), "application/json".to_string());
-    headers
+impl Channel {
+    fn label(self) -> &'static str {
+        match self {
+            Channel::MiniProgram => "miniprogram",
+            Channel::WebDesktop => "web+desktop",
+        }
+    }
+
+    fn headers(self, account: &Value) -> std::collections::HashMap<String, String> {
+        match self {
+            Channel::MiniProgram => {
+                let mut headers = std::collections::HashMap::new();
+                headers.insert(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", get_str(account, "access_token").unwrap_or_default()),
+                );
+                headers.insert("X-Client-Platform".to_string(), "miniprogram".to_string());
+                headers.insert("Accept".to_string(), "application/json".to_string());
+                headers.insert("Content-Type".to_string(), "application/json".to_string());
+                headers
+            }
+            Channel::WebDesktop => {
+                let mut headers = build_auth_headers(account);
+                headers.insert("X-Client-Platform".to_string(), "web".to_string());
+                headers
+            }
+        }
+    }
+}
+
+fn post_with_channel(account: &Value, url: &str, body: Value, channel: Channel) -> Value {
+    let headers = channel.headers(account);
+    http_post_json(url, &body, &headers)
 }
 
 fn paid_packages_body() -> Value {
@@ -361,11 +389,13 @@ fn free_packages_body() -> Value {
     })
 }
 
-fn new_resource_endpoint(account: &Value) -> &'static str {
+fn new_resource_endpoint(account: &Value, force_workbuddy: bool) -> &'static str {
+    if force_workbuddy {
+        return WORKBUDDY_WEB_ENDPOINT;
+    }
     // 官网脚本使用相对路径，实际请求的是当前登录 origin。账号库中的 CN
-    // OAuth token 默认签发给 www.codebuddy.cn；若把它固定发往
-    // www.workbuddy.cn，令牌域和 X-Domain 会不一致并被网关拒绝。
-    // 这里只在两个已知官方 origin 间选择，不允许账号数据拼出任意主机。
+    // OAuth token 默认签发给 www.codebuddy.cn；这里只在两个已知官方
+    // origin 间选择，不允许账号数据拼出任意主机。
     match account
         .get("domain")
         .and_then(Value::as_str)
@@ -378,8 +408,8 @@ fn new_resource_endpoint(account: &Value) -> &'static str {
     }
 }
 
-fn new_resource_url(account: &Value, path: &str) -> String {
-    format!("{}{path}", new_resource_endpoint(account))
+fn endpoint_host(endpoint: &str) -> &str {
+    endpoint.trim_start_matches("https://").trim_start_matches("http://")
 }
 
 struct NewResourceResponses {
@@ -395,28 +425,34 @@ fn retry_new_response_if_unauthorized(
     response: Value,
     url: &str,
     body: Value,
+    channel: Channel,
 ) -> Value {
     if is_unauthorized(&response) {
-        post_with_account(account, url, body)
+        post_with_channel(account, url, body, channel)
     } else {
         response
     }
 }
 
-/// 统一惰性刷新后请求三类新资源接口；若任一路返回未授权，只刷新一次，
-/// 然后仅重试该分支，避免多路同时刷新并覆盖账号库中的 token。
+/// 按指定端点 + 通道请求三类新资源接口；若任一路返回未授权且允许刷新，
+/// 只刷新一次，然后仅重试该分支，避免多路同时刷新并覆盖账号库中的 token。
 /// （样例为 tokio::join! 三路并行，本项目同步 HTTP 顺序调用，结果一致。）
-fn fetch_new_resource_responses(account: &Value) -> NewResourceResponses {
-    let working_account = ensure_fresh_token(account.clone());
-    let summary_url = new_resource_url(&working_account, RESOURCE_SUMMARY_PATH);
-    let paid_url = new_resource_url(&working_account, RESOURCE_PAID_PACKAGES_PATH);
-    let free_url = new_resource_url(&working_account, RESOURCE_FREE_PACKAGES_PATH);
+fn fetch_new_resource_responses(
+    account: &Value,
+    endpoint: &str,
+    channel: Channel,
+    allow_refresh: bool,
+) -> NewResourceResponses {
+    let working_account = account.clone();
+    let summary_url = format!("{endpoint}{RESOURCE_SUMMARY_PATH}");
+    let paid_url = format!("{endpoint}{RESOURCE_PAID_PACKAGES_PATH}");
+    let free_url = format!("{endpoint}{RESOURCE_FREE_PACKAGES_PATH}");
     let summary_body = json!({});
     let paid_body = paid_packages_body();
     let free_body = free_packages_body();
-    let summary = post_with_account(&working_account, &summary_url, summary_body.clone());
-    let paid = post_with_account(&working_account, &paid_url, paid_body.clone());
-    let free = post_with_account(&working_account, &free_url, free_body.clone());
+    let summary = post_with_channel(&working_account, &summary_url, summary_body.clone(), channel);
+    let paid = post_with_channel(&working_account, &paid_url, paid_body.clone(), channel);
+    let free = post_with_channel(&working_account, &free_url, free_body.clone(), channel);
 
     if !(is_unauthorized(&summary) || is_unauthorized(&paid) || is_unauthorized(&free)) {
         return NewResourceResponses {
@@ -428,7 +464,7 @@ fn fetch_new_resource_responses(account: &Value) -> NewResourceResponses {
         };
     }
 
-    if get_str(&working_account, "refresh_token").is_none() {
+    if !allow_refresh || get_str(&working_account, "refresh_token").is_none() {
         return NewResourceResponses {
             account: working_account,
             summary,
@@ -438,10 +474,11 @@ fn fetch_new_resource_responses(account: &Value) -> NewResourceResponses {
         };
     }
     let refreshed = refresh_account_token(working_account);
-    let summary =
-        retry_new_response_if_unauthorized(&refreshed, summary, &summary_url, summary_body);
-    let paid = retry_new_response_if_unauthorized(&refreshed, paid, &paid_url, paid_body);
-    let free = retry_new_response_if_unauthorized(&refreshed, free, &free_url, free_body);
+    let summary = retry_new_response_if_unauthorized(
+        &refreshed, summary, &summary_url, summary_body, channel,
+    );
+    let paid = retry_new_response_if_unauthorized(&refreshed, paid, &paid_url, paid_body, channel);
+    let free = retry_new_response_if_unauthorized(&refreshed, free, &free_url, free_body, channel);
     NewResourceResponses {
         account: refreshed,
         summary,
@@ -606,30 +643,90 @@ fn credit_result(account: &Value, resources: Vec<Value>, now: i64) -> Value {
     })
 }
 
+/// 追加一行积分查询诊断日志（脱敏：不含 token，只记录端点/通道/错误）。
+/// 超过 512KB 时轮转，避免无限增长。
+fn append_credits_log(line: &str) {
+    use std::io::Write;
+    let path = super::store_path().join("logs").join("workbuddy_credits.log");
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > 512 * 1024 {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+fn combo_label(endpoint: &str, channel: Channel) -> String {
+    format!("{}@{}", channel.label(), endpoint_host(endpoint))
+}
+
 /// 查询单账号的积分资源及到期时间。
+///
+/// 依次尝试「端点 × 认证通道」组合（见 [`Channel`] 文档），任一组合成功
+/// 即返回；全部失败时汇总各组合错误并写入诊断日志。
 pub fn get_credit_expiry(account: &Value) -> Value {
     let account_id = account.get("id").cloned().unwrap_or(Value::Null);
+    let account_name = account_display_name(account);
     let now = now_ms();
-    let responses = fetch_new_resource_responses(account);
-    if let Some(resources) = normalized_new_resources(
-        &responses.summary,
-        &responses.paid,
-        &responses.free,
-        now,
-    ) {
-        return credit_result(account, resources, now);
+    let fresh = ensure_fresh_token(account.clone());
+
+    let primary_endpoint = new_resource_endpoint(&fresh, false);
+    let secondary_endpoint = if primary_endpoint == WORKBUDDY_API_ENDPOINT {
+        WORKBUDDY_WEB_ENDPOINT
+    } else {
+        WORKBUDDY_API_ENDPOINT
+    };
+    let combos: [(&str, Channel); 4] = [
+        (primary_endpoint, Channel::MiniProgram),
+        (secondary_endpoint, Channel::MiniProgram),
+        (WORKBUDDY_WEB_ENDPOINT, Channel::WebDesktop),
+        (WORKBUDDY_API_ENDPOINT, Channel::WebDesktop),
+    ];
+
+    let mut working = fresh;
+    let mut diagnostics: Vec<String> = Vec::new();
+    let mut first_combo_refreshed = false;
+
+    for (index, (endpoint, channel)) in combos.iter().enumerate() {
+        let responses = fetch_new_resource_responses(&working, endpoint, *channel, index == 0);
+        if index == 0 {
+            first_combo_refreshed = responses.refresh_attempted;
+        }
+        if let Some(resources) =
+            normalized_new_resources(&responses.summary, &responses.paid, &responses.free, now)
+        {
+            append_credits_log(&format!(
+                "{} [{}] OK via {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S"),
+                account_name,
+                combo_label(endpoint, *channel),
+            ));
+            return credit_result(account, resources, now);
+        }
+        // 后续组合复用本组合可能刷新过的账号，避免重复刷新覆盖 token。
+        working = responses.account;
+        diagnostics.push(format!(
+            "{}: {}",
+            combo_label(endpoint, *channel),
+            response_error(&responses.summary),
+        ));
     }
 
-    // 旧接口回退必须复用三路请求已刷新过的账号，避免再次拿原始 refresh token
+    // 旧接口回退必须复用组合请求已刷新过的账号，避免再次拿原始 refresh token
     // 发起第二次刷新并把刚落盘的新 token 覆盖成失效状态。
-    let mut fallback_account = responses.account;
+    let mut fallback_account = working;
     let mut response = fetch_legacy_user_resource(&fallback_account);
     if is_unauthorized(&response)
-        && !responses.refresh_attempted
+        && !first_combo_refreshed
         && get_str(&fallback_account, "refresh_token").is_some()
     {
-        // 新接口没有触发过 401 刷新时，仍保留旧接口原有的一次重试能力；
-        // 若新接口已刷新过，则禁止这里再次刷新，保证一次查询最多一次 401 refresh。
+        // 新接口组合没有触发过 401 刷新时，保留旧接口原有的一次重试能力；
+        // 若已刷新过则禁止再次刷新，保证一次查询最多一次 401 refresh。
         fallback_account = refresh_account_token(fallback_account);
         response = fetch_legacy_user_resource(&fallback_account);
     }
@@ -638,13 +735,32 @@ pub fn get_credit_expiry(account: &Value) -> Value {
             .into_iter()
             .map(|resource| resource_summary(resource, now))
             .collect();
+        append_credits_log(&format!(
+            "{} [{}] OK via legacy(/v2)",
+            Local::now().format("%Y-%m-%d %H:%M:%S"),
+            account_name,
+        ));
         return credit_result(account, resources, now);
     }
+
+    let legacy_error = response_error(&response);
+    let error = format!(
+        "积分查询失败。新接口尝试：{}；旧接口(/v2)：{}",
+        diagnostics.join("；"),
+        legacy_error,
+    );
+    append_credits_log(&format!(
+        "{} [{}] FAIL {} | legacy: {}",
+        Local::now().format("%Y-%m-%d %H:%M:%S"),
+        account_name,
+        diagnostics.join(" | "),
+        legacy_error,
+    ));
     json!({
         "ok": false,
         "accountId": account_id,
         "accountName": account_display_name(account),
-        "error": response_error(&response),
+        "error": error,
     })
 }
 
@@ -857,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    fn selects_endpoint_from_known_account_domain_and_keeps_headers_aligned() {
+    fn selects_endpoint_and_channel_headers_as_intended() {
         let codebuddy = json!({
             "domain": "www.codebuddy.cn",
             "access_token": "redacted",
@@ -870,32 +986,28 @@ mod tests {
         });
         let unknown = json!({"domain": "attacker.example", "access_token": "redacted"});
 
-        assert_eq!(
-            new_resource_url(&codebuddy, RESOURCE_SUMMARY_PATH),
-            "https://www.codebuddy.cn/billing/meter/get-user-resource-summary"
-        );
-        assert_eq!(
-            new_resource_url(&workbuddy, RESOURCE_SUMMARY_PATH),
-            "https://www.workbuddy.cn/billing/meter/get-user-resource-summary"
-        );
-        assert_eq!(
-            new_resource_url(&unknown, RESOURCE_SUMMARY_PATH),
-            "https://www.codebuddy.cn/billing/meter/get-user-resource-summary"
-        );
+        assert_eq!(new_resource_endpoint(&codebuddy, false), WORKBUDDY_API_ENDPOINT);
+        assert_eq!(new_resource_endpoint(&workbuddy, false), WORKBUDDY_WEB_ENDPOINT);
+        assert_eq!(new_resource_endpoint(&unknown, false), WORKBUDDY_API_ENDPOINT);
+        assert_eq!(new_resource_endpoint(&unknown, true), WORKBUDDY_WEB_ENDPOINT);
 
-        let headers = resource_auth_headers(&codebuddy);
-        assert_eq!(
-            headers.get("X-Client-Platform").map(String::as_str),
-            Some("miniprogram")
-        );
-        assert_eq!(
-            headers.get("Authorization").map(String::as_str),
-            Some("Bearer redacted")
-        );
-        // 新网关通道对齐官方用户中心拦截器，不带桌面端专用头。
-        assert!(!headers.contains_key("X-Domain"));
-        assert!(!headers.contains_key("X-User-Id"));
-        assert!(!headers.contains_key("X-Enterprise-Id"));
+        // miniprogram 通道对齐官方用户中心拦截器：精简头，无桌面端专用头。
+        let mini = Channel::MiniProgram.headers(&codebuddy);
+        assert_eq!(mini.get("X-Client-Platform").map(String::as_str), Some("miniprogram"));
+        assert_eq!(mini.get("Authorization").map(String::as_str), Some("Bearer redacted"));
+        assert!(!mini.contains_key("X-Domain"));
+        assert!(!mini.contains_key("X-User-Id"));
+        assert!(!mini.contains_key("X-Enterprise-Id"));
+
+        // web+desktop 通道保持 v2.6.0 / 样例行为：桌面完整头 + web 声明。
+        let web = Channel::WebDesktop.headers(&codebuddy);
+        assert_eq!(web.get("X-Client-Platform").map(String::as_str), Some("web"));
+        assert_eq!(web.get("Authorization").map(String::as_str), Some("Bearer redacted"));
+        assert_eq!(web.get("X-User-Id").map(String::as_str), Some("u1"));
+        assert_eq!(web.get("X-Domain").map(String::as_str), Some("www.codebuddy.cn"));
+
+        assert_eq!(endpoint_host("https://www.codebuddy.cn"), "www.codebuddy.cn");
+        assert_eq!(combo_label("https://www.codebuddy.cn", Channel::MiniProgram), "miniprogram@www.codebuddy.cn");
     }
 
     #[test]
