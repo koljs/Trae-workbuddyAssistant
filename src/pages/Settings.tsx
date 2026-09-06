@@ -296,6 +296,34 @@ export default function Settings() {
               {taskInfo}
             </pre>
           )}
+
+          <div className="my-4 border-t border-slate-100 dark:border-zinc-800" />
+
+          <h3 className="mb-2 font-medium">WorkBuddy 自动签到</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            应用内定时器：软件运行期间每日到点自动对「今日未签且无需重登」的 WorkBuddy
+            账号执行一键签到；软件未运行时不触发（区别于上方基于计划任务的 Trae 定时签到）。设置随顶部「保存」按钮生效。
+          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.wb_auto_checkin}
+                onChange={(e) => update('wb_auto_checkin', e.target.checked)}
+              />
+              启用
+            </label>
+            <div className="relative flex items-center">
+              <Clock size={15} className="pointer-events-none absolute left-2.5 text-slate-400" />
+              <input
+                type="time"
+                value={form.wb_auto_checkin_time}
+                onChange={(e) => update('wb_auto_checkin_time', e.target.value)}
+                disabled={!form.wb_auto_checkin}
+                className="input h-9 !w-32 pl-8 text-sm disabled:opacity-50"
+              />
+            </div>
+          </div>
         </section>
 
         <section className="card p-4">

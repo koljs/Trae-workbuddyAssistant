@@ -156,6 +156,8 @@ function defaultSettings(): Settings {
     api_port: 7864,
     api_key: '',
     api_default_model: 'deepseek-v4-flash',
+    wb_auto_checkin: false,
+    wb_auto_checkin_time: '09:00',
   };
 }
 

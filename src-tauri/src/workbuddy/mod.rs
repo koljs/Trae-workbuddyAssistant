@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod auth_file;
+pub mod auto;
 pub mod checkin;
 pub mod credits;
 pub mod http;

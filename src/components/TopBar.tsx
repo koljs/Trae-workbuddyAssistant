@@ -17,11 +17,12 @@ import {
   CalendarCheck,
 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-shell';
+import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from '../store';
 import { api } from '../lib/tauri';
 import { Badge } from './ui';
 import ThemeToggle from './ThemeToggle';
-import type { WorkBuddyAccountMeta } from '../types';
+import type { WorkBuddyAccountMeta, WorkBuddyCheckinDone } from '../types';
 
 /** 顶栏按左侧当前模块切换：TRAE 显示 Trae 状态栏，WorkBuddy 显示 WB 状态栏（全局页跟随当前模块）。 */
 export default function TopBar() {
@@ -108,6 +109,16 @@ function WorkBuddyBar() {
 
   useEffect(() => {
     void reload();
+  }, [reload]);
+
+  // 任一轮签到（手动/自动）完成后刷新账号状态，保持「今日已签」计数新鲜
+  useEffect(() => {
+    const un = listen<WorkBuddyCheckinDone>('workbuddy-checkin-done', () => {
+      void reload();
+    });
+    return () => {
+      void un.then((f) => f());
+    };
   }, [reload]);
 
   const total = accounts?.length ?? 0;

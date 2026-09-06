@@ -93,6 +93,10 @@ export interface Settings {
   api_port: number;
   api_key: string;
   api_default_model: string;
+  /** WorkBuddy 应用内自动签到开关（仅软件运行期间生效） */
+  wb_auto_checkin: boolean;
+  /** WorkBuddy 自动签到每日触发时间，"HH:MM" */
+  wb_auto_checkin_time: string;
 }
 
 export interface CheckinOpts {
@@ -265,6 +269,8 @@ export interface WorkBuddyCheckinDone {
   already: number;
   failed: number;
   total: number;
+  /** 触发来源：'auto' 为应用内自动签到，undefined 为手动签到 */
+  source?: 'auto';
 }
 
 export interface WorkBuddyCreditResource {

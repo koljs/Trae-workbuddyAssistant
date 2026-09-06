@@ -127,6 +127,9 @@ fn main() {
                 ),
             );
 
+            // WorkBuddy 应用内自动签到调度器（每 30s 检查一次，随应用常驻）
+            workbuddy::auto::spawn_scheduler(app.handle().clone());
+
             // 创建系统托盘（始终启用，支持最小化到托盘；失败不阻断启动）
             {
                 let result = (|| -> Result<(), Box<dyn std::error::Error>> {

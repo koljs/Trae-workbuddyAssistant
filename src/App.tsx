@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
@@ -16,7 +17,7 @@ import WorkBuddyAccounts from './pages/WorkBuddyAccounts';
 import WorkBuddyCheckin from './pages/WorkBuddyCheckin';
 import WorkBuddyCredits from './pages/WorkBuddyCredits';
 import { isTauri } from './lib/tauri';
-import type { ViewKey } from './types';
+import type { ViewKey, WorkBuddyCheckinDone } from './types';
 
 function renderView(view: ViewKey) {
   switch (view) {
@@ -82,6 +83,7 @@ export default function App() {
   const init = useAppStore((s) => s.init);
   const ready = useAppStore((s) => s.ready);
   const settings = useAppStore((s) => s.settings);
+  const pushToast = useAppStore((s) => s.pushToast);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -89,6 +91,23 @@ export default function App() {
       console.error('初始化失败:', err);
     });
   }, [init]);
+
+  // WorkBuddy 应用内自动签到完成通知（source=auto 时后端触发；
+  // 手动签到由发起方提示，此处不重复）
+  useEffect(() => {
+    if (!isTauri) return;
+    const un = listen<WorkBuddyCheckinDone>('workbuddy-checkin-done', (e) => {
+      if (e.payload.source !== 'auto') return;
+      const p = e.payload;
+      pushToast(
+        p.failed > 0 ? 'warn' : 'success',
+        `WorkBuddy 自动签到完成：成功 ${p.ok}，已签 ${p.already}，失败 ${p.failed}`,
+      );
+    });
+    return () => {
+      void un.then((f) => f());
+    };
+  }, [pushToast]);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');

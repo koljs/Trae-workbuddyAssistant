@@ -41,13 +41,13 @@ Trae Work Assistant 是一款开源的 Windows 桌面工具，为 **Trae** 与 *
 
 - **积分看板**：排行、三线趋势图（总数/获得/消耗）、今日新增统计
 
-- **WorkBuddy 支持**：独立模块覆盖 WorkBuddy 账号管理、批量签到（每账号互斥锁 + 全局轮次锁并发保护、失败自动回退旧 API 端点、Token 刷新与 401 自动重试）、积分概览
+- **WorkBuddy 支持**：独立模块覆盖 WorkBuddy 账号管理、批量签到（每账号互斥锁 + 全局轮次锁并发保护、失败自动回退旧 API 端点、Token 刷新与 401 自动重试）、应用内定时自动签到（软件运行期间每日到点执行）、积分概览
 
 - **本地代理**：MITM 代理自动捕获 JWT、注入独立设备 ID；**自动串联已有系统代理（VPN）作为上游**，开启代理后外网访问不受影响，停止时原样还原系统代理
 
 - **API 网关**：内嵌 OpenAI 兼容 API 服务，账号池智能调度（积分过期感知 + 冷却状态机）
 
-- **定时任务**：Windows 计划任务，后台自动签到
+- **定时任务**：Windows 计划任务，后台自动签到（Trae 账号，无需启动应用）
 
 - **6 层设备标识重置**：machineid / storage.json 遥测 / aha.device / 注册表 MachineGuid / webview 追踪数据 / aha TinyStorage
 

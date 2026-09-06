@@ -107,6 +107,12 @@ pub struct Settings {
     pub api_key: String,
     #[serde(default = "default_api_model")]
     pub api_default_model: String,
+    /// WorkBuddy 应用内自动签到开关（仅软件运行期间生效，区别于 Trae 的计划任务方案）
+    #[serde(default)]
+    pub wb_auto_checkin: bool,
+    /// WorkBuddy 自动签到每日触发时间，"HH:MM" 格式
+    #[serde(default = "default_wb_auto_checkin_time")]
+    pub wb_auto_checkin_time: String,
 }
 
 fn default_api_port() -> u16 {
@@ -114,6 +120,9 @@ fn default_api_port() -> u16 {
 }
 fn default_api_model() -> String {
     "deepseek-v4-flash".into()
+}
+fn default_wb_auto_checkin_time() -> String {
+    "09:00".into()
 }
 
 fn default_port() -> u16 {
