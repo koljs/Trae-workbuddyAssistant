@@ -4,6 +4,17 @@
 
 ---
 
+## [2.6.1] - 2026-09-06
+
+修复 WorkBuddy 积分概览刷新时报"请求不合法，如有疑问请联系客服"的问题。
+
+### 修复
+
+- **积分查询认证通道**（`src-tauri/src/workbuddy/credits.rs`）：WorkBuddy 用户中心的 billing 网关按 `X-Client-Platform` 声明区分认证方式——`web` 平台走 Cookie 认证（不携带 Authorization 头），`miniprogram` 平台走 `Authorization: Bearer <token>`。桌面端持有 OAuth token 却声明 `web` 平台，被业务层按 Cookie 通道校验并拒绝。现改为模拟官方小程序通道：声明 `X-Client-Platform: miniprogram` 并携带 Bearer token，同时请求头集合对齐官方用户中心 Axios 拦截器（仅 Authorization / X-Client-Platform / Content-Type / Accept，不再附带 X-User-Id、X-Domain 等桌面端专用头）。
+- **旧接口回退通道**：`/v2/billing/meter/get-user-resource`（v2 前缀的桌面客户端 API）回退时改用与签到一致的桌面请求头，不再复用小程序通道头。
+
+---
+
 ## [2.6.0] - 2026-09-06
 
 新增 WorkBuddy 应用内自动签到：软件运行期间每日到点自动执行，无需手动点击。

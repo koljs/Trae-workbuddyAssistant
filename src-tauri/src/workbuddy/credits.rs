@@ -311,11 +311,26 @@ fn post_with_account(account: &Value, url: &str, body: Value) -> Value {
     http_post_json(url, &body, &headers)
 }
 
+/// 新网关 billing 接口（无 /v2 前缀）走用户中心 miniprogram 通道。
+///
+/// 官方用户中心（uc_config）的 Axios 拦截器逻辑：web 平台用 Cookie 认证
+/// （withCredentials，不携带 Authorization）；miniprogram 平台用
+/// `Authorization: Bearer <token>`。两种平台的请求头集合一致，均为
+/// X-Client-Platform + （小程序时的）Authorization + 基础 JSON 头，
+/// 不含 X-User-Id / X-Domain 等桌面端专用头。
+///
+/// 桌面端持有 OAuth token，因此模拟 miniprogram 通道：声明
+/// `X-Client-Platform: miniprogram` 并携带 Bearer token。此前声明 web
+/// 平台却被按 Cookie 通道校验，服务端返回"请求不合法"。
 fn resource_auth_headers(account: &Value) -> std::collections::HashMap<String, String> {
-    let mut headers = build_auth_headers(account);
-    // WorkBuddy 用户中心的 Axios 拦截器始终携带该头。桌面端使用同一组
-    // billing 接口时也保持一致，避免网关把请求当成未知客户端。
-    headers.insert("X-Client-Platform".to_string(), "web".to_string());
+    let mut headers = std::collections::HashMap::new();
+    headers.insert(
+        "Authorization".to_string(),
+        format!("Bearer {}", get_str(account, "access_token").unwrap_or_default()),
+    );
+    headers.insert("X-Client-Platform".to_string(), "miniprogram".to_string());
+    headers.insert("Accept".to_string(), "application/json".to_string());
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
     headers
 }
 
@@ -454,7 +469,10 @@ fn fetch_legacy_user_resource(account: &Value) -> Value {
     // 新接口编排已经统一执行过惰性刷新，并在任一路未授权时只刷新一次。
     // 旧接口回退必须直接复用该账号，不能重新进入 authenticated_post，
     // 否则可能重复刷新并用旧 refresh token 覆盖刚落盘的新 token。
-    post_with_account(account, &url, body)
+    // 旧接口（/v2 前缀）属于桌面客户端 API，走与签到一致的桌面头，
+    // 不能复用新接口的 miniprogram 通道头。
+    let headers = build_auth_headers(account);
+    http_post_json(&url, &body, &headers)
 }
 
 fn merge_resources(summary_resources: Vec<Value>, detail_resources: Vec<Value>) -> Vec<Value> {
@@ -866,11 +884,18 @@ mod tests {
         );
 
         let headers = resource_auth_headers(&codebuddy);
-        assert_eq!(headers.get("X-Client-Platform").map(String::as_str), Some("web"));
         assert_eq!(
-            headers.get("X-Domain").map(String::as_str),
-            Some("www.codebuddy.cn")
+            headers.get("X-Client-Platform").map(String::as_str),
+            Some("miniprogram")
         );
+        assert_eq!(
+            headers.get("Authorization").map(String::as_str),
+            Some("Bearer redacted")
+        );
+        // 新网关通道对齐官方用户中心拦截器，不带桌面端专用头。
+        assert!(!headers.contains_key("X-Domain"));
+        assert!(!headers.contains_key("X-User-Id"));
+        assert!(!headers.contains_key("X-Enterprise-Id"));
     }
 
     #[test]
