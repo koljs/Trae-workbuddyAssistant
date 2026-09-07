@@ -10,9 +10,15 @@ pub const WORKBUDDY_API_ENDPOINT: &str = "https://www.codebuddy.cn";
 pub const WORKBUDDY_API_PREFIX: &str = "/v2/plugin";
 pub const CHECKIN_API_PREFIX: &str = "/v2/billing/meter";
 
+/// 计费网关（/v2/billing/meter/*）自 2026-09-01 起校验 User-Agent，
+/// 拒绝无 UA 及 ureq 等 HTTP 库默认 UA（"请求不合法"）。官方桌面端为
+/// Electron（Chrome 内核），这里统一使用浏览器级 UA。
+const BROWSER_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
+
 fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(20))
+        .user_agent(BROWSER_USER_AGENT)
         .build()
 }
 

@@ -4,6 +4,16 @@
 
 ---
 
+## [2.6.3] - 2026-09-07
+
+修复 WorkBuddy 积分查询报"请求不合法"的问题：计费网关新上线的 User-Agent 校验拒绝 HTTP 库默认 UA。
+
+### 修复
+
+- **积分查询统一浏览器 User-Agent**（`src-tauri/src/workbuddy/http.rs`）：WorkBuddy 计费网关（`/v2/billing/meter/*`）自 2026-09-01 起校验请求的 `User-Agent`，无 UA 或携带 `ureq/<版本>` 等 HTTP 库默认 UA 的请求会被拒绝并返回"请求不合法"——这解释了 2.6.2 中全部「端点 × 认证通道」组合（请求头各不相同）一致失败的现象：它们的共同点是都经 ureq 发送、携带库默认 UA。现 WorkBuddy 模块统一 HTTP 客户端改用浏览器级 `User-Agent`（对齐官方 Electron 桌面端内核），覆盖积分、签到、token 刷新等全部 WorkBuddy 请求。签到接口此前未被该校验覆盖故未受影响，本次一并加固以防后续扩散。
+
+---
+
 ## [2.6.2] - 2026-09-06
 
 WorkBuddy 积分查询改为多通道自动探测 + 诊断日志，进一步排查"请求不合法"。

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# v2.6.2 Windows 交叉编译一键构建（环境重置后可重复执行）
-# 产物：release/Trae Work 助手_2.6.2_x64-setup.exe + _portable.zip
+# v2.6.3 Windows 交叉编译一键构建（环境重置后可重复执行）
+# 产物：release/Trae Work 助手_2.6.3_x64-setup.exe + _portable.zip
 set -euo pipefail
 
 export PATH=/root/.pyenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.cargo/bin
@@ -32,7 +32,7 @@ eval "$(cargo xwin env --target x86_64-pc-windows-msvc)"
 echo "=== [6/6] 拷贝产物 + 便携包 ==="
 cd /workspace
 mkdir -p release
-cp "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Trae Work 助手_2.6.2_x64-setup.exe" release/
+cp "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Trae Work 助手_2.6.3_x64-setup.exe" release/
 mkdir -p src-tauri/target/release
 cp src-tauri/target/x86_64-pc-windows-msvc/release/trae-work-assistant.exe src-tauri/target/release/
 python3 scripts/package_portable.py 2>&1 | tail -2
